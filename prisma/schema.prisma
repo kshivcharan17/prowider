@@ -1,0 +1,70 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Service {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  leads Lead[]
+}
+
+model Provider {
+  id            Int              @id @default(autoincrement())
+  name          String           @unique
+  monthlyQuota  Int              @default(10)
+  leadsReceived Int              @default(0)
+  // Round-robin state: index of the next provider to receive in each pool
+  assignments   LeadAssignment[]
+}
+
+// Tracks which providers are assigned to which leads
+model LeadAssignment {
+  id         Int      @id @default(autoincrement())
+  leadId     Int
+  providerId Int
+  assignedAt DateTime @default(now())
+
+  lead     Lead     @relation(fields: [leadId], references: [id])
+  provider Provider @relation(fields: [providerId], references: [id])
+
+  @@unique([leadId, providerId])
+}
+
+model Lead {
+  id          Int      @id @default(autoincrement())
+  name        String
+  phone       String
+  city        String
+  description String
+  serviceId   Int
+  createdAt   DateTime @default(now())
+
+  service     Service          @relation(fields: [serviceId], references: [id])
+  assignments LeadAssignment[]
+
+  // Enforce: same phone cannot submit same service twice
+  @@unique([phone, serviceId])
+}
+
+// Persists round-robin pointer per service pool
+// serviceName = "service1_pool" | "service2_pool" | "service3_pool"
+model AllocationState {
+  id          Int    @id @default(autoincrement())
+  poolKey     String @unique
+  nextIndex   Int    @default(0)
+}
+
+// Idempotency keys for webhook calls
+model WebhookEvent {
+  id             Int      @id @default(autoincrement())
+  idempotencyKey String   @unique
+  processedAt    DateTime @default(now())
+  payload        String
+}
